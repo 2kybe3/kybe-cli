@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, bail};
 
 use crate::config::types::Config;
 
@@ -45,6 +45,27 @@ impl Config {
     pub fn save(&self) -> anyhow::Result<()> {
         let path = self.path.as_ref().ok_or(anyhow!("config path not set"))?;
         std::fs::write(path, toml::to_string(&self)?).context("failed to write config file")?;
+        Ok(())
+    }
+
+    pub fn reload(&mut self) -> anyhow::Result<()> {
+        let path = match &self.path {
+            Some(p) => p,
+            None => bail!("loaded config doesn't have a path associated"),
+        };
+
+        if !path.exists() {
+            bail!("config didn't exist when reloading");
+        }
+
+        let config_str = std::fs::read_to_string(path).context("failed to read config file")?;
+        let mut new_cfg: Config =
+            toml::from_str(&config_str).context("failed to parse config (invalid config file)")?;
+
+        new_cfg.path = Some(path.clone());
+
+        *self = new_cfg;
+
         Ok(())
     }
 }
