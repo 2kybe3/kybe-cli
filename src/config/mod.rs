@@ -69,3 +69,56 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn create_default_config_if_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let cfg = Config::load(Some(path.clone())).unwrap();
+
+        assert!(path.exists());
+        assert_eq!(cfg.path.as_ref(), Some(&path));
+    }
+
+    #[test]
+    fn save_and_reload_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut cfg = Config::load(Some(path.clone())).unwrap();
+        cfg.save().unwrap();
+
+        let original = cfg.clone();
+        cfg.reload().unwrap();
+
+        assert_eq!(cfg, original);
+    }
+
+    #[test]
+    fn reload_fails_if_file_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut cfg = Config::load(Some(path.clone())).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(cfg.reload().is_err());
+    }
+
+    #[test]
+    fn invalid_toml_fails() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        std::fs::write(&path, "not = valid = toml").unwrap();
+
+        let err = Config::load(Some(path)).unwrap_err();
+        assert!(err.to_string().contains("parse"));
+    }
+}

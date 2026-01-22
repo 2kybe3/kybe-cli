@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     /// Stores the location of the loaded Config
@@ -14,7 +14,7 @@ pub struct Config {
     pub generated: GeneratedConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ApiConfig {
     /// Configuration the API to use (defaults to my 2kybe3 instance hosted at https://kybe.xyz)
@@ -23,7 +23,7 @@ pub struct ApiConfig {
     pub timeout_secs: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GeneratedConfig {
     pub last_launch: Option<DateTime<Utc>>,
