@@ -3,15 +3,20 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Config {
+    pub config_folder: PathBuf,
+    pub user_file: PathBuf,
+    pub generated_file: PathBuf,
+
+    pub user: UserConfig,
+    pub generated: GeneratedConfig,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct Config {
-    /// Stores the location of the loaded Config
-    #[serde(skip_serializing)]
-    pub path: Option<PathBuf>,
-
+pub struct UserConfig {
     pub api: ApiConfig,
-    pub generated: GeneratedConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

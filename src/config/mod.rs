@@ -2,123 +2,91 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow, bail};
 
-use crate::config::types::Config;
+use crate::config::types::{Config, GeneratedConfig, UserConfig};
 
 mod default;
+mod tests;
 pub mod types;
 
-impl Config {
-    pub fn load(config_path: Option<PathBuf>) -> anyhow::Result<Config> {
-        let path = match config_path {
-            Some(config_path) => config_path,
-            None => directories::ProjectDirs::from("xyz", "2kybe3", "kybe-cli")
-                .ok_or(anyhow!(
-                    "no valid home directory path could be retrieved from the operating system."
-                ))?
-                .config_dir()
-                .to_path_buf(),
-        };
+const USER_CONFIG_NAME: &str = "config.toml";
+const GENERATED_CONFIG_NAME: &str = "generated.toml";
 
-        Self::load_from_path(path)
+impl Config {
+    /// Loads a config from a given path
+    pub fn load() -> anyhow::Result<Config> {
+        let folder = directories::ProjectDirs::from("xyz", "2kybe3", "kybe-cli")
+            .ok_or(anyhow!(
+                "no valid home directory path could be retrieved from the operating system."
+            ))?
+            .config_dir()
+            .to_path_buf();
+
+        Self::load_from_path(folder)
     }
 
     fn load_from_path(path: PathBuf) -> anyhow::Result<Config> {
-        let mut config = if !path.exists() {
-            Self::create_config(&path)?
+        let mut user = path.clone();
+        user.push(USER_CONFIG_NAME);
+        let mut generated = path.clone();
+        generated.push(GENERATED_CONFIG_NAME);
+
+        if path.exists() && !path.is_dir() {
+            bail!("config path should be a folder but is a file");
+        }
+        if !path.exists() {
+            std::fs::create_dir_all(&path).context("failed to create config folder")?;
+        }
+
+        if user.exists() && !user.is_file() {
+            bail!("user config path exists but is not a file");
+        }
+        let user_config: UserConfig = if !user.exists() {
+            Self::create_default_user_config(&user)?
         } else {
-            let config_str =
-                std::fs::read_to_string(&path).context("failed to read config file")?;
-            toml::from_str(&config_str).context("failed to parse config (invalid config file)")?
+            let user_config_str =
+                std::fs::read_to_string(&user).context("failed to read user config file")?;
+            toml::from_str(&user_config_str)
+                .context("failed to parse user config (invalid config file)")?
         };
 
-        config.path = Some(path);
+        let generated_config: GeneratedConfig = if !generated.exists() {
+            Self::create_default_generated_config(&generated)?
+        } else {
+            let generated_config_str = std::fs::read_to_string(&generated)
+                .context("failed to read generated config file")?;
+            toml::from_str(&generated_config_str)
+                .context("failed to parse generated config (invalid config file)")?
+        };
+
+        let config = Self {
+            config_folder: path,
+            user_file: user,
+            generated_file: generated,
+            user: user_config,
+            generated: generated_config,
+        };
+
         Ok(config)
     }
 
-    fn create_config(path: &Path) -> anyhow::Result<Config> {
-        let config = Config::default();
+    fn create_default_user_config(path: &Path) -> anyhow::Result<UserConfig> {
+        let config = UserConfig::default();
         std::fs::write(path, toml::to_string(&config)?)
             .context("failed to write default config")?;
         Ok(config)
     }
 
+    fn create_default_generated_config(path: &Path) -> anyhow::Result<GeneratedConfig> {
+        let config = GeneratedConfig::default();
+        std::fs::write(path, toml::to_string(&config)?)
+            .context("failed to write default config")?;
+        Ok(config)
+    }
+
+    /// Saves generated config file
     pub fn save(&self) -> anyhow::Result<()> {
-        let path = self.path.as_ref().ok_or(anyhow!("config path not set"))?;
-        std::fs::write(path, toml::to_string(&self)?).context("failed to write config file")?;
+        std::fs::write(&self.generated_file, toml::to_string(&self.generated)?)
+            .context("failed to write generated config file")?;
         Ok(())
-    }
-
-    pub fn reload(&mut self) -> anyhow::Result<()> {
-        let path = match &self.path {
-            Some(p) => p,
-            None => bail!("loaded config doesn't have a path associated"),
-        };
-
-        if !path.exists() {
-            bail!("config didn't exist when reloading");
-        }
-
-        let config_str = std::fs::read_to_string(path).context("failed to read config file")?;
-        let mut new_cfg: Config =
-            toml::from_str(&config_str).context("failed to parse config (invalid config file)")?;
-
-        new_cfg.path = Some(path.clone());
-
-        *self = new_cfg;
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn create_default_config_if_missing() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-
-        let cfg = Config::load(Some(path.clone())).unwrap();
-
-        assert!(path.exists());
-        assert_eq!(cfg.path.as_ref(), Some(&path));
-    }
-
-    #[test]
-    fn save_and_reload_roundtrip() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-
-        let mut cfg = Config::load(Some(path.clone())).unwrap();
-        cfg.save().unwrap();
-
-        let original = cfg.clone();
-        cfg.reload().unwrap();
-
-        assert_eq!(cfg, original);
-    }
-
-    #[test]
-    fn reload_fails_if_file_missing() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-
-        let mut cfg = Config::load(Some(path.clone())).unwrap();
-        std::fs::remove_file(&path).unwrap();
-
-        assert!(cfg.reload().is_err());
-    }
-
-    #[test]
-    fn invalid_toml_fails() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-
-        std::fs::write(&path, "not = valid = toml").unwrap();
-
-        let err = Config::load(Some(path)).unwrap_err();
-        assert!(err.to_string().contains("parse"));
     }
 }

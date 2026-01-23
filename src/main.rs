@@ -11,10 +11,6 @@ use crate::config::types::Config;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Allows you to specify a custom config path
-    #[arg(long, value_hint = clap::ValueHint::FilePath)]
-    config: Option<std::path::PathBuf>,
-
     /// Allows you to edit the config with your prefered editor
     #[arg(long)]
     edit_config: bool,
@@ -23,27 +19,23 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let cfg = Arc::new(Mutex::new(Config::load(args.config)?));
+    let cfg = Arc::new(Mutex::new(Config::load()?));
 
     if args.edit_config {
-        let mut cfg_guard = cfg.lock();
+        let cfg_guard = cfg.lock();
 
         let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
 
-        if let Some(path) = &cfg_guard.path {
-            let status = std::process::Command::new(editor)
-                .arg(path)
-                .status()
-                .context("failed to open editor")?;
+        let status = std::process::Command::new(editor)
+            .arg(&cfg_guard.user_file)
+            .status()
+            .context("failed to open editor")?;
 
-            if !status.success() {
-                eprintln!("Editor exited with non-zero status");
-            }
-
-            cfg_guard.reload()?;
-        } else {
-            eprintln!("Config has no path associated; cannot edit");
+        if !status.success() {
+            eprintln!("Editor exited with non-zero status");
         }
+
+        std::process::exit(0);
     }
 
     {
